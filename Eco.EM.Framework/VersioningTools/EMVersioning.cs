@@ -15,6 +15,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace Eco.EM.Framework
 {
@@ -72,7 +73,7 @@ namespace Eco.EM.Framework
         {
             const string emWeb = "https://elixrmods.com/api/v1/GetVersions?apikey=uaRVGlDndFUIlwKJ";
             var request = Network.GetRequest(emWeb);
-            return JsonConvert.DeserializeObject<EMRequestObject>(request);
+            return JsonConvert.DeserializeObject<EMRequestObject>(request.Result);
         }
 
         // Returns a formatted string of the installed EMPack versions for either console or chat.
@@ -90,7 +91,7 @@ namespace Eco.EM.Framework
                 {
                     System.Console.ForegroundColor = ConsoleColor.Magenta;
                     System.Console.WriteLine(Localizer.DoStr(string.Format("Unable to contact webserver for latest pack info")));
-                    
+
                 }
                 else
                     latestPack = check.rows["EM Framework"];
@@ -125,10 +126,10 @@ namespace Eco.EM.Framework
             {
                 if (console)
                 {
-                    System.Console.ForegroundColor = ConsoleColor.Magenta;
-                    System.Console.WriteLine(Localizer.DoStr(string.Format("An error occured while attempting to check versions.")));
-                    System.Console.WriteLine(Localizer.DoStr(string.Format("Current installed versions")));
-                    System.Console.ResetColor();
+                   // System.Console.ForegroundColor = ConsoleColor.Magenta;
+                   // System.Console.WriteLine(Localizer.DoStr(string.Format("An error occured while attempting to check versions.")));
+                   // System.Console.WriteLine(Localizer.DoStr(string.Format("Current installed versions")));
+                   // System.Console.ResetColor();
                     //print the versions anyway so people know even on fail
                     var packs = GetEMInstalledInfo();
                     int count = 0;
@@ -143,50 +144,68 @@ namespace Eco.EM.Framework
                     }
                 }
                 else
-                    chat += string.Format("<color=red>{0}</color>", "An error occured while attempting to check versions.Please contact the EM Development Team");
+                {
+                    var packs = GetEMInstalledInfo();
+                    int count = 0;
+                    foreach (var p in packs)
+                    {
+                        count++;
+                        logFile.Write($"{p.Key} - Installed Version: {p.Value}");
+                        if (console)
+                            PrintSinglePackConsole(p.Key, p.Value, p.Value);
+                        else
+                        {
+                            chat += string.Format("<color=red>{0}</color>", "An error occured while attempting to check versions.Please contact the EM Development Team");
+                            chat += PrintSingleStringChat(p.Key, p.Value, p.Value);
+                        }
+                    }
+                }
             }
         }
 
-        private static void CheckEMVersion()
+        private async static void CheckEMVersion()
         {
-            try
+            await Task.Run(() =>
             {
-                var packs = GetEMInstalledInfo();
-                var check = GetEMMasterInfo();
-                string latestPack = "";
-
-                if (check.Status != "200" || check.rows == null || check.rows.Count == 0)
+                try
                 {
-                    System.Console.ForegroundColor = ConsoleColor.Magenta;
-                    System.Console.WriteLine(Localizer.DoStr(string.Format("Unable to contact webserver for latest pack info")));
-                }
-                else
-                    latestPack = check.rows["EM Framework"];
+                    var packs = GetEMInstalledInfo();
+                    var check = GetEMMasterInfo();
+                    string latestPack = "";
 
-                int count = 0;
-                foreach (var p in packs)
-                {
-                    count++;
-
-                    if (check.rows.ContainsKey(p.Key))
-                        latestPack = check.rows[p.Key];
+                    if (check.Status != "200" || check.rows == null || check.rows.Count == 0)
+                    {
+                        System.Console.ForegroundColor = ConsoleColor.Magenta;
+                        System.Console.WriteLine(Localizer.DoStr(string.Format("Unable to contact webserver for latest pack info")));
+                    }
                     else
-                        latestPack = null;
+                        latestPack = check.rows["EM Framework"];
 
-                    CheckModVersion(p.Key, p.Value, latestPack);
-                    if (!BasePlugin.Obj.Config.PostToDiscord && !CheckPackVersion(p.Value, latestPack))
-                        PrintSinglePackConsole(p.Key, p.Value, latestPack);
+                    int count = 0;
+                    foreach (var p in packs)
+                    {
+                        count++;
+
+                        if (check.rows.ContainsKey(p.Key))
+                            latestPack = check.rows[p.Key];
+                        else
+                            latestPack = null;
+
+                        CheckModVersion(p.Key, p.Value, latestPack);
+                        if (!BasePlugin.Obj.Config.PostToDiscord && !CheckPackVersion(p.Value, latestPack).Result)
+                            PrintSinglePackConsole(p.Key, p.Value, latestPack);
+                    }
                 }
-            }
-            catch (Exception)
-            {
-                System.Console.ForegroundColor = ConsoleColor.Magenta;
-                System.Console.WriteLine(Localizer.DoStr(string.Format("An error occured while attempting to check versions. Please contact the EM Development Team")));
-                System.Console.ResetColor();
-            }
+                catch (Exception)
+                {
+                    //System.Console.ForegroundColor = ConsoleColor.Magenta;
+                    //System.Console.WriteLine(Localizer.DoStr(string.Format("An error occured while attempting to check versions. Please contact the EM Development Team")));
+                    //System.Console.ResetColor();
+                }
+            });
         }
 
-        private static bool CheckPackVersion(string iVers, string mVers)
+        private static async Task<bool> CheckPackVersion(string iVers, string mVers)
         {
             return (iVers == mVers);
         }
@@ -194,7 +213,7 @@ namespace Eco.EM.Framework
         // Formats the console output for the EM Pack Info.
         private static void PrintSinglePackConsole(string name, string iVers, string mVers)
         {
-            bool match = CheckPackVersion(iVers, mVers);
+            bool match = CheckPackVersion(iVers, mVers).Result;
             // EM Pack Names should always be in Magenta
             // normal Text in Yellow
             // version text in Green if current version matches master version
@@ -238,7 +257,7 @@ namespace Eco.EM.Framework
 
         private static void CheckModVersion(string name, string iVers, string mVers)
         {
-            bool match = CheckPackVersion(iVers, mVers);
+            bool match = CheckPackVersion(iVers, mVers).Result;
 
             if (!match)
             {
@@ -249,7 +268,7 @@ namespace Eco.EM.Framework
         // Formats the game text output for the EM Pack Info.
         private static string PrintSingleStringChat(string name, string iVers, string mVers)
         {
-            bool match = CheckPackVersion(iVers, mVers);
+            bool match = CheckPackVersion(iVers, mVers).Result;
 
             // EM Pack Names should always be in Magenta
             // normal Text in Yellow

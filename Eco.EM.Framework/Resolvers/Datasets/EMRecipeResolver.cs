@@ -7,6 +7,10 @@ using Eco.Shared.Localization;
 using System.Linq;
 using Eco.Core.Utils;
 using Eco.EM.Framework.Utils;
+using Eco.Gameplay.Skills;
+using System.Threading.Tasks;
+using System.Collections.Concurrent;
+using Eco.Gameplay.Items.Recipes;
 
 // This mod is created by Elixr Mods for Eco under the SLG TOS. 
 // Please feel free to join our community Discord which aims to brings together modders of Eco to share knowledge, 
@@ -40,7 +44,7 @@ namespace Eco.EM.Framework.Resolvers
 
         public static void AddDefaults(RecipeDefaultModel defaults)
         {
-            Obj.LoadedDefaultRecipes.Add(defaults.ModelType, defaults);
+            Obj.LoadedDefaultRecipes.TryAdd(defaults.ModelType, defaults);
         }
 
         // Individual RecipeFamily part resolvers.
@@ -51,12 +55,31 @@ namespace Eco.EM.Framework.Resolvers
 
         public float ResolveExperience(IConfigurableRecipe recipe) => GetExperience(recipe);
 
+        public LocString ResolveRecipeName(IConfigurableRecipe recipe) => GetRecipeName(recipe);
+
+        private LocString GetRecipeName(IConfigurableRecipe recipe)
+        {
+            var dModel = LoadedDefaultRecipes[recipe.GetType().Name];
+            // check if config override
+            var loaded = LoadedConfigRecipes.TryGetValue(recipe.GetType().Name, out RecipeModel model);
+            if (loaded && model.LocalizableName.Equals(dModel.LocalizableName))
+                return Localizer.DoStr(model.LocalizableName);
+
+            // check if mod override
+            loaded = ModRecipeOverrides.TryGetValue(recipe.GetType().Name, out model);
+            if (loaded)
+                return Localizer.DoStr(model.LocalizableName);
+
+            // return default
+            return Localizer.DoStr(dModel.LocalizableName);
+        }
+
         private float GetExperience(IConfigurableRecipe recipe)
         {
             var dModel = LoadedDefaultRecipes[recipe.GetType().Name];
             // check if config override
             var loaded = LoadedConfigRecipes.TryGetValue(recipe.GetType().Name, out RecipeModel model);
-            if (loaded && (model.BaseExperienceOnCraft != dModel.BaseExperienceOnCraft))
+            if (loaded && model.BaseExperienceOnCraft != dModel.BaseExperienceOnCraft)
                 return model.BaseExperienceOnCraft;
 
             // check if mod override
@@ -98,22 +121,22 @@ namespace Eco.EM.Framework.Resolvers
         private static Recipe CreateRecipeFromModel(RecipeModel model, RecipeDefaultModel def)
         {
             var recipe = new Recipe();
-                recipe.Init(
-                def.HiddenName,
-                def.LocalizableName,
-                CreateIngredientList(model, def.RequiredSkillType, def.IngredientImprovementTalents),
-                CreateProductList(model));
+            recipe.Init(
+            def.HiddenName,
+            Localizer.DoStr(model.LocalizableName),
+            CreateIngredientList(model, def.RequiredSkillType, def.IngredientImprovementTalents),
+            CreateProductList(model));
             return recipe;
         }
 
         private static Recipe CreateDefaultRecipeFromModel(RecipeDefaultModel def)
         {
             var recipe = new Recipe();
-                recipe.Init(
-                def.HiddenName,
-                def.LocalizableName,
-                CreateIngredientList(def, def.RequiredSkillType, def.IngredientImprovementTalents),
-                CreateProductList(def));
+            recipe.Init(
+            def.HiddenName,
+            Localizer.DoStr(def.LocalizableName),
+            CreateIngredientList(def, def.RequiredSkillType, def.IngredientImprovementTalents),
+            CreateProductList(def));
             return recipe;
         }
 
@@ -131,19 +154,27 @@ namespace Eco.EM.Framework.Resolvers
                         else
                             ingredients.Add(new IngredientElement(value.Item, value.Amount, true));
                     }
-                    else if(!value.Static && skill == null)
-                    {
-                        if (!value.Tag)
-                            ingredients.Add(new IngredientElement(Item.Get(value.Item), value.Amount, false));
-                        else
-                            ingredients.Add(new IngredientElement(value.Item, value.Amount, false));
-                    }
-                    else
+                    else if (skill != null && talent != null)
                     {
                         if (!value.Tag)
                             ingredients.Add(new IngredientElement(Item.Get(value.Item), value.Amount, skill, talent));
                         else
                             ingredients.Add(new IngredientElement(value.Item, value.Amount, skill, talent));
+                    }
+                    else if (skill != null && talent == null)
+                    {
+                        if (!value.Tag)
+                            ingredients.Add(new IngredientElement(Item.Get(value.Item), value.Amount, skill));
+                        else
+                            ingredients.Add(new IngredientElement(value.Item, value.Amount, skill));
+                    }
+                    else
+                    {
+                        if (!value.Tag)
+                            ingredients.Add(new IngredientElement(Item.Get(value.Item), value.Amount, false));
+                        else
+                            ingredients.Add(new IngredientElement(value.Item, value.Amount, false));
+
                     }
                 }
                 catch
@@ -286,13 +317,13 @@ namespace Eco.EM.Framework.Resolvers
 
 
         // SLG code for creating IDynamicValues of RecipeFamilies
-        private static IDynamicValue CreateCraftTimeValue(float start) => new ConstantValue(start * RecipeFamily.CraftTimeModifier);
+        private static IDynamicValue CreateCraftTimeValue(float start) => new ConstantValue(start * RecipeManager.CraftTimeModifier);
         private static IDynamicValue CreateCraftTimeValue(Type beneficiary, float start, Type skillType, params Type[] talents)
         {
-            var smv = new ModuleModifiedValue(start * RecipeFamily.CraftTimeModifier, skillType, DynamicValueType.Speed);
+            var smv = new ModuleModifiedValue(start * RecipeManager.CraftTimeModifier, skillType, DynamicValueType.Speed);
             return talents != null
                 ? new MultiDynamicValue(MultiDynamicOps.Multiply, talents.Select(x => new TalentModifiedValue(beneficiary, x) as IDynamicValue).Concat(new[] { smv }).ToArray())
-                : (IDynamicValue)smv;
+                : smv;
         }
 
         private static IDynamicValue CreateLaborInCaloriesValue(float start) => new ConstantValue(start);
@@ -316,76 +347,79 @@ namespace Eco.EM.Framework.Resolvers
         private void LoadConfigOverrides()
         {
             SerializedSynchronizedCollection<RecipeModel> newModels = new();
-            var previousModels = EMConfigurePlugin.Config.EMRecipes;
+            var previousModels = EMRecipesPlugin.Config.EMRecipes;
 
             foreach (var type in typeof(IConfigurableRecipe).ConcreteTypes())
             {
                 System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(type.TypeHandle);
-            }
 
-            var loadtypes = LoadedDefaultRecipes.Values.ToList();
-            // for each type that exists that we are trying to load
-            foreach (var dModel in loadtypes)
-            {
-                var m = previousModels.SingleOrDefault(x => x.ModelType == dModel.ModelType);
-                if (m != null && EMConfigurePlugin.Config.useConfigOverrides && !m.Equals(dModel))
+                var loadtypes = LoadedDefaultRecipes.Values.ToList();
+                // for each type that exists that we are trying to load
+                foreach (var dModel in loadtypes)
                 {
-                    newModels.Add(m);
+                    var m = previousModels.FirstOrDefault(x => x.ModelType == dModel.ModelType);
+                    if (m != null && EMConfigurePlugin.Config.useConfigOverrides && !m.Equals(dModel))
+                    {
+                            newModels.Add(m);
 #if DEBUG
                     ConsoleColors.PrintConsoleMultiColored("[EM Framework] ", ConsoleColor.Magenta, Localizer.DoStr($"Loaded Config Override For: {m.ModelType}"), ConsoleColor.Yellow);
 #endif
+                    }
+                    else
+                            newModels.Add(dModel);
                 }
-                else
-                    newModels.Add(dModel);
             }
-            EMConfigurePlugin.Config.EMRecipes = newModels;
+            EMRecipesPlugin.Config.EMRecipes = newModels;
 
-            foreach (var model in EMConfigurePlugin.Config.EMRecipes)
+            foreach (var model in EMRecipesPlugin.Config.EMRecipes)
             {
                 if (!LoadedConfigRecipes.ContainsKey(model.ModelType))
                 {
-                    LoadedConfigRecipes.Add(model.ModelType, model);
+                    LoadedConfigRecipes.TryAdd(model.ModelType, model);
                 }
             }
         }
 
         // Load overrides from other mods.
-        private void InitModOverrides()
+        private async void InitModOverrides()
         {
-            foreach (var type in typeof(IRecipeOverride).ConcreteTypes())
+            await Task.Run(() =>
             {
-                try
+                foreach (var type in typeof(IRecipeOverride).ConcreteTypes())
                 {
-                    IRecipeOverride t = Activator.CreateInstance(type) as IRecipeOverride;
-                    AddRecipeOverride(t.OverrideType, t.Model);
-                    ConsoleColors.PrintConsoleMultiColored("[EM Framework] ", ConsoleColor.Magenta, Localizer.DoStr($"Loaded Mod Override For: {t.Model.ModelType}"), ConsoleColor.Yellow);
-                }
-                catch (Exception e)
-                {
+                    try
+                    {
+                        IRecipeOverride t = Activator.CreateInstance(type) as IRecipeOverride;
+                        AddRecipeOverride(t.OverrideType, t.Model);
+                        ConsoleColors.PrintConsoleMultiColored("[EM Framework] ", ConsoleColor.Magenta, Localizer.DoStr($"Loaded Mod Override For: {t.Model.ModelType}"), ConsoleColor.Yellow);
+                    }
+                    catch (Exception e)
+                    {
 #if DEBUG
                     Log.WriteErrorLine(Localizer.DoStr(string.Format("Unable to add override recipe {0}. Invalid implementation for IRecipeOverride.", type.Name)));
                     Log.WriteErrorLine(Localizer.DoStr($"{e.Message}"));
 #endif
+                    }
                 }
-            }
 
-            /*
-            var bindings = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
-            var tagMan = typeof(GeneratedRegistrarWrapper<TagManager>);
-            var whenRdy = (WhenReady)tagMan.GetField("whenSetupDone", bindings).GetValue(tagMan);
-            whenRdy.Do(() =>
-            {
-                foreach (var type in typeof(IRecipeOverride).ConcreteTypes())
-                    AddRecipeOverride((string)type.GetProperty("OverrideType").GetValue(type), (RecipeModel)type.GetProperty("Model").GetValue(type));
+                /*
+                var bindings = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+                var tagMan = typeof(GeneratedRegistrarWrapper<TagManager>);
+                var whenRdy = (WhenReady)tagMan.GetField("whenSetupDone", bindings).GetValue(tagMan);
+                whenRdy.Do(() =>
+                {
+                    foreach (var type in typeof(IRecipeOverride).ConcreteTypes())
+                        AddRecipeOverride((string)type.GetProperty("OverrideType").GetValue(type), (RecipeModel)type.GetProperty("Model").GetValue(type));
+                });
+                */
             });
-            */
         }
 
         private void AddRecipeOverride(string recipeType, RecipeModel r)
         {
             if (!ModRecipeOverrides.ContainsKey(recipeType))
             {
-                ModRecipeOverrides.Add(recipeType, r);
+                ModRecipeOverrides.TryAdd(recipeType, r);
             }
         }
     }

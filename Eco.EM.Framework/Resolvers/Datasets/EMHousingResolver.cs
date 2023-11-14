@@ -45,9 +45,9 @@ namespace Eco.EM.Framework.Resolvers
             var HomeValue = new HomeFurnishingValue()
             {
                 Category = string.IsNullOrEmpty(HousingConfig.GetRoomCategory(model.RoomType).Name) ? HousingConfig.GetRoomCategory("Decoration") : HousingConfig.GetRoomCategory(model.RoomType),
-                HouseValue = model.SkillValue,
+                BaseValue = model.SkillValue,
                 TypeForRoomLimit = Localizer.DoStr(model.TypeForRoomLimit),
-                DiminishingReturnPercent = model.DiminishingReturn
+                DiminishingReturnMultiplier = model.DiminishingReturn
             };
 
             return HomeValue;
@@ -58,9 +58,9 @@ namespace Eco.EM.Framework.Resolvers
             var HomeValue = new HomeFurnishingValue()
             {
                 Category = string.IsNullOrEmpty(HousingConfig.GetRoomCategory(def.RoomType).Name) ? HousingConfig.GetRoomCategory("Decoration") : HousingConfig.GetRoomCategory(def.RoomType),
-                HouseValue = def.SkillValue,
+                BaseValue = def.SkillValue,
                 TypeForRoomLimit = Localizer.DoStr(def.TypeForRoomLimit),
-                DiminishingReturnPercent = def.DiminishingReturn
+                DiminishingReturnMultiplier = def.DiminishingReturn
             };
 
             return HomeValue;
@@ -72,7 +72,7 @@ namespace Eco.EM.Framework.Resolvers
             var previousModels = newModels;
             try
             {
-                previousModels = EMConfigurePlugin.Config.EMHousingValue;
+                previousModels = EMHousingValuePlugin.Config.EMHousingValue;
             }
             catch
             {
@@ -90,7 +90,10 @@ namespace Eco.EM.Framework.Resolvers
             {
                 var m = previousModels.SingleOrDefault(x => x.ModelType == lModel.ModelType);
 
-
+                if (lModel.RoomType.Equals("LivingRoom"))
+                    lModel.RoomType = "Living Room";
+                if (m.RoomType.Equals("LivingRoom"))
+                    m.RoomType = "Living Room";
 
                 if (m != null)
                 {
@@ -104,10 +107,15 @@ namespace Eco.EM.Framework.Resolvers
                     newModels.Add(m);
                 }
                 else
+                {
+                    if (HousingConfig.GetRoomCategory(lModel.RoomType) == null || lModel.RoomType == "General")
+                        lModel.RoomType = HousingConfig.GetRoomCategory("Decoration").Name;
+
                     newModels.Add(lModel);
+                }
             }
 
-            EMConfigurePlugin.Config.EMHousingValue = newModels;
+            EMHousingValuePlugin.Config.EMHousingValue = newModels;
 
             foreach (var model in newModels)
             {

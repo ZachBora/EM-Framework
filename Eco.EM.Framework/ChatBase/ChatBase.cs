@@ -1,15 +1,18 @@
 ﻿using System;
 using Eco.Core.Plugins.Interfaces;
+using Eco.Core.Utils;
 using Eco.EM.Framework.Logging;
 using Eco.EM.Framework.Utils;
 using Eco.Gameplay.Players;
 using Eco.Gameplay.Systems.Messaging.Chat;
 using Eco.Gameplay.Systems.Messaging.Mail;
 using Eco.Gameplay.Systems.Messaging.Notifications;
+using Eco.ModKit.Internal;
 using Eco.Shared.IoC;
 using Eco.Shared.Localization;
 using Eco.Shared.Services;
 using Eco.Shared.Utils;
+using User = Eco.Gameplay.Players.User;
 
 namespace Eco.EM.Framework.ChatBase
 {
@@ -957,7 +960,7 @@ namespace Eco.EM.Framework.ChatBase
                     case MessageType.CustomInfo:
                         foreach (var user in PlayerUtils.OnlineUsers)
                         {
-                            user.Player.OpenCustomPanel(Message.Title, Message.Content, Message.NotificationStyle.ToString());
+                            user.Player.LargeInfoBox(Localizer.DoStr(Message.Title), Localizer.DoStr(Message.Content));
                         }
                         break;
                     case MessageType.OkBox:
@@ -1146,7 +1149,7 @@ namespace Eco.EM.Framework.ChatBase
         }
         internal static bool SendToPlayer(InfoBox Message)
         {
-            Message.Player.Msg(Localizer.DoStr(Shared.Utils.Text.InfoLight(Message.Content)), Message.NotificationStyle);
+            Message.Player.MsgLocStr(Shared.Utils.Text.InfoLight(Message.Content), Message.NotificationStyle);
             if (Message.SendToChat)
                 NotificationManager.ServerMessageToPlayer(Localizer.DoStr(Message.Content), Message.Player.User);
             return true;
@@ -1192,7 +1195,7 @@ namespace Eco.EM.Framework.ChatBase
             switch (Message.PanelType)
             {
                 case PanelType.CustomPanel:
-                    Message.Player.OpenCustomPanel(Message.Title, Message.Content, Message.Instance);
+                    Message.Player.LargeInfoBox(Localizer.DoStr(Message.Title), Localizer.DoStr(Message.Content));
                     break;
                 case PanelType.InfoPanel:
                     Message.Player.OpenInfoPanel(Message.Title, Message.Content, Message.Instance);
@@ -1216,7 +1219,7 @@ namespace Eco.EM.Framework.ChatBase
                     case PanelType.CustomPanel:
                         foreach (var user in PlayerUtils.OnlineUsers)
                         {
-                            user.Player.OpenCustomPanel(Message.Title, Message.Content, Message.Instance);
+                            user.Player.LargeInfoBox(Localizer.DoStr(Message.Title), Localizer.DoStr(Message.Content));
                         }
                         break;
                     case PanelType.InfoPanel:
@@ -1303,7 +1306,7 @@ namespace Eco.EM.Framework.ChatBase
                     Message.Player.OpenInfoPanel(Message.Title, Message.Content, Message.NotificationStyle.ToString());
                     break;
                 case MessageType.CustomInfo:
-                    Message.Player.OpenCustomPanel(Message.Title, Message.Content, Message.NotificationStyle.ToString());
+                    Message.Player.LargeInfoBox(Localizer.DoStr(Message.Title), Localizer.DoStr(Message.Content));
                     break;
                 case MessageType.OkBox:
                     Message.Player.OkBoxLoc($"{Message.Content}");

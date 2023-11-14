@@ -5,6 +5,7 @@ namespace Eco.EM.Framework.Resolvers
 {
     public class EMConfigureConfig
     {
+        public bool MigrationPerformed { get; set; } = false;
         [LocDisplayName("Default Max Stack Size")]
         [LocDescription("Set the default max stack size of those that don't have the max stack size attribute (Default is 100)")]
         public int DefaultMaxStackSize { get; set; } = 100;
